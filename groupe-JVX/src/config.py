@@ -1,13 +1,11 @@
-"""
-Central configuration module.
-"""
+# groupe-JVX/src/config.py
 from typing import Dict
 
 class Config:
     # === Market Data ===
     TICKER: str = "BTC-USD"
     INTERVAL: str = "1d"
-    START_DATE: str = "2018-01-01" # On prend plus d'historique pour être large
+    START_DATE: str = "2018-01-01"
     END_DATE: str = "2026-01-01"
     
     # === Data Split ===
@@ -15,7 +13,8 @@ class Config:
     TEST_RATIO: float = 0.30
     
     # === Backtesting ===
-    INITIAL_CASH: float = 10_000.0
+    # CORRECTION : 1 Million pour pouvoir acheter des BTC entiers (qui valent > 60k$)
+    INITIAL_CASH: float = 1_000_000.0
     COMMISSION_CRYPTO: float = 0.001 
     COMMISSION_STOCK: float = 0.0001
     
@@ -26,25 +25,26 @@ class Config:
         return cls.COMMISSION_STOCK
     
     # === Genetic Algorithm ===
-    GA_POPULATION: int = 30 
-    GA_GENERATIONS: int = 5 
+    GA_POPULATION: int = 50 
+    GA_GENERATIONS: int = 10 
     GA_CXPB: float = 0.7
     GA_MUTPB: float = 0.2
     
     # === Walk-Forward Analysis ===
-    WFA_TRAIN_MONTHS: int = 24  # Plus longue période d'entrainement
+    WFA_TRAIN_MONTHS: int = 24
     WFA_TEST_MONTHS: int = 6    
     WFA_STEP_MONTHS: int = 3
     
-    # === Gene Bounds (MODE TURBO / AGRESSIF) ===
+    # === Gene Bounds ===
+    # Tuple (min, max) pour le mode "Turbo"
     GENE_BOUNDS: Dict[str, tuple] = {
-        'SMA_F': (5, 20),       # Très rapide (5 à 20 jours)
-        'SMA_S': (25, 60),      # Rapide (max 60 jours pour éviter le warm-up trop long)
-        'RSI_P': (5, 14),       # RSI standard ou rapide
-        'RSI_UP': (70, 95),     
-        'RSI_LO': (30, 65),     # IMPORTANT: On achète même si le RSI est à 65 (presque neutre)
-        'SL': (0.02, 0.15),     
-        'TP': (0.05, 0.50),     # On vise des gros gains
+        'SMA_F': (5, 30),
+        'SMA_S': (40, 150),
+        'RSI_P': (10, 20),
+        'RSI_UP': (65, 85),
+        'RSI_LO': (20, 45), # Forcé en survente
+        'SL': (0.02, 0.10),     
+        'TP': (0.05, 0.30),
     }
     
     # === Paths ===

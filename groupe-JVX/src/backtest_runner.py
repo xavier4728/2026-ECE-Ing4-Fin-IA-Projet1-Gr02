@@ -2,98 +2,72 @@
 from backtesting import Backtest, Strategy
 import pandas as pd
 import numpy as np
+from .config import Config  # Import de la config pour le Cash
 
-# --- DÉFINITION DES INDICATEURS (SANS TA-LIB) ---
-
+# --- INDICATEURS PANDAS (PORTABLES) ---
 def SMA(array, n):
-    """
-    Moyenne Mobile Simple (Simple Moving Average)
-    Calculée via Pandas rolling mean.
-    """
     return pd.Series(array).rolling(n).mean()
 
 def RSI(array, n):
-    """
-    Relative Strength Index (RSI)
-    Implémentation vectorisée avec Pandas (Wilder's Smoothing).
-    """
     series = pd.Series(array)
     delta = series.diff()
-    
-    # Séparation des gains et des pertes
     gain = delta.clip(lower=0)
     loss = -1 * delta.clip(upper=0)
-    
-    # Calcul de la moyenne mobile exponentielle (EWM)
-    # Note: Pour le RSI, alpha = 1/n correspond au lissage de Wilder standard
     avg_gain = gain.ewm(alpha=1/n, min_periods=n, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1/n, min_periods=n, adjust=False).mean()
-    
     rs = avg_gain / avg_loss
-    
-    # Gestion de la division par zéro (si avg_loss est 0)
     rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50) # Valeur neutre pour le début de l'historique
+    return rsi.fillna(50)
 
-# --- STRATÉGIE ---
-
+# --- STRATEGIE ---
 class GenStrategy(Strategy):
-    # Les paramètres par défaut seront écrasés par l'AG
-    SMA_F = 10
-    SMA_S = 50
-    RSI_P = 14
-    RSI_LO = 30
-    RSI_UP = 70
-    SL = 0.05
-    TP = 0.10
+    # Paramètres par défaut
+    SMA_F, SMA_S, RSI_P, RSI_LO, RSI_UP, SL, TP = 10, 50, 14, 30, 70, 0.05, 0.1
+    
+    # Paramètre spécial pour le Walk-Forward (Warm-up)
+    trading_start_date = None 
 
     def init(self):
-        # Pré-calcul des indicateurs SANS TA-Lib
-        # self.I() enregistre la fonction pour qu'elle soit exécutée et plottable
         self.sma_f = self.I(SMA, self.data.Close, self.SMA_F)
         self.sma_s = self.I(SMA, self.data.Close, self.SMA_S)
         self.rsi = self.I(RSI, self.data.Close, self.RSI_P)
 
     def next(self):
-        # Gestion des positions
-        price = self.data.Close[-1]
+        # 1. Gestion du Warm-up (WFA)
+        if self.trading_start_date is not None:
+            if pd.Timestamp(self.data.index[-1]) < pd.Timestamp(self.trading_start_date):
+                return
 
-        # Si nous n'avons pas de position, nous cherchons à entrer
+        # 2. Gestion du Trading
+        price = self.data.Close[-1]
+        
         if not self.position:
-            # CONDITION D'ACHAT (Long)
-            # 1. Tendance haussière (Fast > Slow)
-            # 2. Repli temporaire (RSI < Seuil Bas)
+            # Condition stricte : Tendance + Survente
             if self.sma_f[-1] > self.sma_s[-1] and self.rsi[-1] < self.RSI_LO:
-                
-                # Calcul dynamique du SL et TP
                 sl_price = price * (1 - self.SL)
                 tp_price = price * (1 + self.TP)
-                
                 self.buy(sl=sl_price, tp=tp_price)
 
-        # Si nous avons une position, nous laissons le SL/TP gérer la sortie
-        # ou nous pourrions ajouter une condition de sortie ici.
-
-def run_backtest_with_params(data_path, params):
-    """
-    Exécute un backtest unique avec les paramètres fournis par l'AG.
-    """
+def run_backtest_with_params(data_input, params, verbose=False, trading_start_date=None):
+    """Exécute le backtest (Compatible DataFrame et Fichier)."""
     try:
-        # Chargement des données
-        # On force le parsing des dates pour éviter les erreurs d'index
-        data = pd.read_csv(data_path, index_col='Date', parse_dates=True)
-        
-        # Nettoyage basique
+        # GESTION CRITIQUE : DataFrame vs Chemin Fichier
+        if isinstance(data_input, str):
+            data = pd.read_csv(data_input, index_col='Date', parse_dates=True)
+        else:
+            # Si c'est déjà un DataFrame (cas du main.py)
+            data = data_input.copy()
+            
+        # Nettoyage
+        if 'Volume' not in data.columns: data['Volume'] = 0
         data = data.dropna()
-        
-        # Vérification si les données sont suffisantes pour les indicateurs
-        max_lookback = max(params.get('SMA_S', 200), params.get('SMA_F', 50))
-        if len(data) < max_lookback:
-            # Retourne un résultat vide/nul si pas assez de données
-            return {'Return [%]': -100, '# Trades': 0, 'Max. Drawdown [%]': 100}
 
-        # Configuration de la stratégie avec les paramètres de l'individu
-        # On crée une sous-classe dynamique pour injecter les paramètres
+        # Vérification taille minimale
+        max_lookback = max(params.get('SMA_S', 200), 50)
+        if len(data) < max_lookback + 5:
+             return {'Return [%]': -100.0, '# Trades': 0, 'Max. Drawdown [%]': 100.0, 'Win Rate [%]': 0.0}
+
+        # Injection dynamique des paramètres
         class IndividualStrategy(GenStrategy):
             SMA_F = int(params['SMA_F'])
             SMA_S = int(params['SMA_S'])
@@ -102,16 +76,22 @@ def run_backtest_with_params(data_path, params):
             RSI_UP = int(params['RSI_UP'])
             SL = float(params['SL'])
             TP = float(params['TP'])
+            
+        # Injection de la date de démarrage (hack de classe)
+        IndividualStrategy.trading_start_date = trading_start_date
 
-        # Lancement du backtest
-        # Cash initial réaliste (ex: 10,000$)
-        # Commission standard crypto (0.1% = 0.001)
-        bt = Backtest(data, IndividualStrategy, cash=10000, commission=0.001)
-        
+        # Backtest avec CASH configuré
+        bt = Backtest(data, IndividualStrategy, cash=Config.INITIAL_CASH, commission=0.001)
         stats = bt.run()
-        return stats
         
+        if verbose:
+            print(stats)
+
+        return stats
+
     except Exception as e:
-        print(f"Erreur Backtest: {e}")
-        # En cas de crash (ex: données corrompues), on retourne un score pénalisant
-        return {'Return [%]': -100, '# Trades': 0, 'Max. Drawdown [%]': 100}
+        print(f"Erreur Backtest Runner: {e}")
+        return {'Return [%]': -100.0, '# Trades': 0, 'Max. Drawdown [%]': 100.0, 'Win Rate [%]': 0.0}
+
+# ALIAS VITAL
+run_simple_backtest = run_backtest_with_params

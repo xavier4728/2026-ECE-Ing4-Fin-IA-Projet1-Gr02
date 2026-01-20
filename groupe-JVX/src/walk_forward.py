@@ -1,6 +1,4 @@
-"""
-Walk-Forward Analysis Module (CORRIGÉ - Fix du bug de trading).
-"""
+# groupe-JVX/src/walk_forward.py
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from src.ga_core import GAEcosystem
@@ -9,10 +7,6 @@ from src.strategy_genes import decode_chromosome
 from src.config import Config
 
 class WalkForwardAnalyzer:
-    """
-    Orchestrates the Walk-Forward Analysis (WFA) process.
-    Train on Window N -> Test on Window N+1 -> Slide.
-    """
     
     def __init__(self, data_manager):
         self.dm = data_manager
@@ -22,7 +16,6 @@ class WalkForwardAnalyzer:
         print("STARTING WALK-FORWARD ANALYSIS (WITH WARM-UP)")
         print("="*70)
         
-        # Get full dataset
         full_data = self.dm.get_full_data()
         if full_data.empty:
             print("Error: No data available for WFA.")
@@ -32,18 +25,15 @@ class WalkForwardAnalyzer:
         end_date = full_data.index[-1]
         
         current_train_start = start_date
-        
         wfa_results = []
         window_count = 1
         
-        # Boucle Principale
         while True:
-            # Define periods
+            # Périodes
             train_end = current_train_start + relativedelta(months=Config.WFA_TRAIN_MONTHS)
-            test_start = train_end  # ✅ Le test commence immédiatement après le train
+            test_start = train_end
             test_end = test_start + relativedelta(months=Config.WFA_TEST_MONTHS)
             
-            # Stop if we exceed data
             if test_end > end_date:
                 break
                 
@@ -51,81 +41,73 @@ class WalkForwardAnalyzer:
             print(f"Train: {current_train_start.date()} -> {train_end.date()}")
             print(f"Test:  {test_start.date()} -> {test_end.date()}")
             
-            # ✅ CORRECTION MAJEURE : Warm-up séparé
-            # On calcule le SMA_S max possible (200 par défaut, mais ici limité à 60)
-            max_indicator_period = 60  # Config.GENE_BOUNDS['SMA_S'][1]
+            # WARM-UP LOGIC
+            max_indicator_period = 60
+            warmup_buffer_days = max_indicator_period + 10
             
-            # On prend N jours de données AVANT test_start pour chauffer les indicateurs
-            # (en jours de bourse, donc on prend large : 60 jours = ~3 mois calendaires)
-            warmup_buffer_days = max_indicator_period + 10  # Marge de sécurité
+            try:
+                test_data_index = full_data.index.get_loc(test_start, method='nearest')
+                warmup_start_index = max(0, test_data_index - warmup_buffer_days)
+                warmup_start = full_data.index[warmup_start_index]
+            except:
+                # Fallback si dates hors limites
+                warmup_start = test_start
             
-            # On cherche la date de début du warm-up en reculant dans full_data
-            test_data_index = full_data.index.get_loc(test_start, method='nearest')
-            warmup_start_index = max(0, test_data_index - warmup_buffer_days)
-            warmup_start = full_data.index[warmup_start_index]
+            # Data Slicing
+            train_data = self.dm.get_data_slice(str(current_train_start.date()), str(train_end.date()))
+            test_data_with_warmup = self.dm.get_data_slice(str(warmup_start.date()), str(test_end.date()))
             
-            print(f"Warm-up: {warmup_start.date()} -> {test_start.date()} ({warmup_buffer_days} bars)")
-            
-            # 1. Get Data Slices
-            train_data = self.dm.get_data_slice(
-                str(current_train_start.date()), 
-                str(train_end.date())
-            )
-            
-            # ✅ Test data INCLUT le warm-up (depuis warmup_start)
-            test_data_with_warmup = self.dm.get_data_slice(
-                str(warmup_start.date()), 
-                str(test_end.date())
-            )
-            
+            # Vérifications taille
             if len(train_data) < 50:
                 print("Skipping window: Not enough training data.")
                 current_train_start += relativedelta(months=Config.WFA_STEP_MONTHS)
-                window_count += 1
-                continue
-                
-            if len(test_data_with_warmup) < warmup_buffer_days + 10:
-                print("Skipping window: Not enough test data (including warm-up).")
-                current_train_start += relativedelta(months=Config.WFA_STEP_MONTHS)
-                window_count += 1
                 continue
 
-            # 2. Optimization (Train)
+            # 1. OPTIMISATION (Sur Train)
             print("  > Optimizing...")
             ga = GAEcosystem(train_data)
-            pop, log = ga.run_evolution(population_size=30, generations=5, verbose=False)
+            # CORRECTION : Pas d'arguments pop/gen ici, tout est dans Config via ga_core
+            pop, log = ga.run_evolution(verbose=False)
             
-            # Select Best Individual (Max Profit)
             best_ind = max(pop, key=lambda ind: ind.fitness.values[0])
             best_params = decode_chromosome(best_ind)
             
             print(f"  > Best Params: SMA_F={best_params['SMA_F']}, SMA_S={best_params['SMA_S']}, RSI_LO={best_params['RSI_LO']}")
             
-            # 3. Validation (Test)
+            # 2. TEST (Sur Test avec Warmup)
             print("  > Testing on unseen data (with warm-up)...")
             
-            # ✅ CORRECTION : On passe test_start (pas train_end) comme date de début de trading
+            # On lance le backtest en spécifiant QUAND commencer à trader
             result = run_simple_backtest(
-                best_params, 
                 test_data_with_warmup, 
+                best_params, 
                 verbose=False,
-                trading_start_date=test_start.date()  # ✅ FIX : Date de début du test réel
+                trading_start_date=test_start.date() # Le trading commence après le warm-up
             )
             
+            # CORRECTION CLES RESULTATS (Backtesting.py output keys)
+            profit = result['Return [%]']
+            trades = result['# Trades']
+            dd = result['Max. Drawdown [%]']
+            win_rate = result['Win Rate [%]']
+            
+            # Gestion des NaN si 0 trades
+            if pd.isna(win_rate): win_rate = 0.0
+
             window_result = {
                 'window': window_count,
                 'train_period': f"{current_train_start.date()} to {train_end.date()}",
                 'test_period': f"{test_start.date()} to {test_end.date()}",
-                'profit_pct': result['profit_pct'],
-                'drawdown': result['max_drawdown'],
-                'trades': result['total_trades'],
-                'win_rate': result.get('win_rate', 0)
+                'profit_pct': profit,
+                'drawdown': dd,
+                'trades': trades,
+                'win_rate': win_rate
             }
             wfa_results.append(window_result)
             
-            print(f"  > Result: Profit {result['profit_pct']:.2f}% | Trades: {result['total_trades']} | WR: {result.get('win_rate', 0):.1f}%")
+            print(f"  > Result: Profit {profit:.2f}% | Trades: {trades} | WR: {win_rate:.1f}%")
             
-            # Slide Window
+            # Slide
             current_train_start += relativedelta(months=Config.WFA_STEP_MONTHS)
             window_count += 1
             
@@ -155,11 +137,11 @@ class WalkForwardAnalyzer:
             if r['profit_pct'] > 0: wins += 1
             
         print("-" * 75)
+        # Moyenne simple des profits (Attention: en réalité il faudrait composer les rendements)
         avg_profit = total_profit / len(results) if results else 0
-        win_rate = (wins / len(results)) * 100 if results else 0
+        global_win_rate = (wins / len(results)) * 100 if results else 0
         
         print(f"Average Profit per Window: {avg_profit:.2f}%")
-        print(f"Total Cumulative Profit (Simple Sum): {total_profit:.2f}%")
-        print(f"Window Win Rate: {win_rate:.2f}%")
-        print(f"Total Trades Across All Windows: {total_trades}")
+        print(f"Total Cumulative Profit: {total_profit:.2f}%")
+        print(f"Windows with Profit: {wins}/{len(results)} ({global_win_rate:.1f}%)")
         print("="*70)
