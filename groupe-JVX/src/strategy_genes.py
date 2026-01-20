@@ -4,11 +4,9 @@ Backtrader strategy implementation with genetic algorithm parameters.
 import backtrader as bt
 from typing import Dict
 
-
 class GeneticStrategy(bt.Strategy):
     """
     Trading strategy with parameters optimized by genetic algorithm.
-    Uses SMA crossover and RSI for entry/exit signals.
     """
     
     params = (
@@ -22,103 +20,69 @@ class GeneticStrategy(bt.Strategy):
     )
     
     def __init__(self):
-        """
-        Initialize strategy indicators and state.
-        """
-        # Validate parameters
-        if self.params.SMA_F >= self.params.SMA_S:
-            self.valid_params = False
-        else:
-            self.valid_params = True
+        """Initialize strategy indicators."""
+        # Validation basique des périodes
+        self.valid_params = self.params.SMA_F < self.params.SMA_S
         
-        # Initialize indicators
+        # Indicateurs
         self.sma_fast = bt.indicators.SimpleMovingAverage(
-            self.data.close, period=self.params.SMA_F
+            self.data.close, period=int(self.params.SMA_F)
         )
         self.sma_slow = bt.indicators.SimpleMovingAverage(
-            self.data.close, period=self.params.SMA_S
+            self.data.close, period=int(self.params.SMA_S)
         )
         self.rsi = bt.indicators.RSI(
-            self.data.close, period=self.params.RSI_P
+            self.data.close, period=int(self.params.RSI_P)
         )
         
-        # Track order status
         self.order = None
-        self.buy_price = None
         
     def notify_order(self, order):
-        """
-        Handle order notifications.
-        
-        Args:
-            order: Order object from Backtrader
-        """
+        """Gère les notifications d'ordres (achat/vente/rejet)."""
         if order.status in [order.Submitted, order.Accepted]:
             return
         
         if order.status in [order.Completed]:
-            if order.isbuy():
-                self.buy_price = order.executed.price
             self.order = None
-            
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.order = None
     
     def next(self):
-        """
-        Execute strategy logic on each bar.
-        """
-        # Skip if parameters are invalid
-        if not self.valid_params:
+        """Logique exécutée à chaque bougie."""
+        # 1. Sécurité : Si paramètres invalides ou ordre en cours, on ne fait rien
+        if not self.valid_params or self.order:
             return
         
-        # Skip if we have a pending order
-        if self.order:
-            return
-        
-        # Entry Logic (Long only)
+        # 2. Logique d'Entrée (ACHAT)
         if not self.position:
-            # Conditions:
-            # 1. Close > Fast SMA
-            # 2. Fast SMA > Slow SMA
-            # 3. RSI < Oversold threshold
-            if (self.data.close[0] > self.sma_fast[0] and
-                self.sma_fast[0] > self.sma_slow[0] and
+            # CORRECTION MAJEURE ICI :
+            # On achète le "Dip" (RSI bas) dans une tendance haussière (Fast > Slow).
+            # On a RETIRÉ la condition (Close > Fast) qui bloquait tout.
+            if (self.sma_fast[0] > self.sma_slow[0] and 
                 self.rsi[0] < self.params.RSI_LO):
                 
-                # Calculate stop loss and take profit prices
-                current_price = self.data.close[0]
-                stop_price = current_price * (1 - self.params.SL)
-                limit_price = current_price * (1 + self.params.TP)
+                # Calcul Stop Loss / Take Profit
+                price = self.data.close[0]
+                stop_price = price * (1.0 - self.params.SL)
+                limit_price = price * (1.0 + self.params.TP)
                 
-                # Use buy bracket for automatic SL/TP
+                # Ordre Bracket (Entrée + SL + TP liés)
                 self.order = self.buy_bracket(
-                    size=None,  # Use all available cash
+                    limitprice=limit_price, 
                     stopprice=stop_price,
-                    limitprice=limit_price
+                    exectype=bt.Order.Market
                 )
         
-        # Exit Logic
+        # 3. Logique de Sortie (VENTE FORCEE)
+        # Note: Le Bracket gère déjà SL/TP, ici on gère juste la sortie technique
         else:
-            # Exit if:
-            # 1. RSI > Overbought threshold OR
-            # 2. Close < Slow SMA
-            if (self.rsi[0] > self.params.RSI_UP or
-                self.data.close[0] < self.sma_slow[0]):
-                
-                self.order = self.close()
-
+            # On sort si le RSI explose ou si la tendance s'inverse
+            if (self.rsi[0] > self.params.RSI_UP or 
+                self.sma_fast[0] < self.sma_slow[0]):
+                self.close()
 
 def decode_chromosome(chromosome: list) -> Dict[str, float]:
-    """
-    Decode a chromosome (list of genes) into strategy parameters.
-    
-    Args:
-        chromosome: List of 7 genes [SMA_F, SMA_S, RSI_P, RSI_UP, RSI_LO, SL, TP]
-        
-    Returns:
-        Dict[str, float]: Parameter dictionary for the strategy
-    """
+    """Decode a chromosome (list of genes) into strategy parameters."""
     return {
         'SMA_F': int(chromosome[0]),
         'SMA_S': int(chromosome[1]),
@@ -128,24 +92,3 @@ def decode_chromosome(chromosome: list) -> Dict[str, float]:
         'SL': float(chromosome[5]),
         'TP': float(chromosome[6]),
     }
-
-
-def encode_params(params: Dict[str, float]) -> list:
-    """
-    Encode strategy parameters into a chromosome.
-    
-    Args:
-        params: Parameter dictionary
-        
-    Returns:
-        list: Chromosome as list of genes
-    """
-    return [
-        params['SMA_F'],
-        params['SMA_S'],
-        params['RSI_P'],
-        params['RSI_UP'],
-        params['RSI_LO'],
-        params['SL'],
-        params['TP'],
-    ]
