@@ -1,123 +1,89 @@
-"""
-Genetic Algorithm Core Module using DEAP.
-"""
+# groupe-JVX/src/ga_core.py
 import random
 import numpy as np
-import warnings
 from deap import base, creator, tools, algorithms
-from src.strategy_genes import decode_chromosome
-from src.backtest_runner import run_backtest
-from src.config import Config
+from .strategy_genes import generate_individual, get_gene_ranges
+from .backtest_runner import run_backtest_with_params
 
-# On masque les warnings de calcul sur les infinis
-warnings.filterwarnings("ignore")
+# Configuration DEAP
+# On maximise le Profit (et potentiellement on pourrait ajouter le Sharpe Ratio)
+creator.create("FitnessMax", base.Fitness, weights=(1.0,)) 
+creator.create("Individual", dict, fitness=creator.FitnessMax)
 
-# 1. Setup DEAP Fitness and Individual
-if not hasattr(creator, "FitnessMulti"):
-    creator.create("FitnessMulti", base.Fitness, weights=(1.0, -1.0))
+def get_toolbox(data_path):
+    toolbox = base.Toolbox()
 
-if not hasattr(creator, "Individual"):
-    creator.create("Individual", list, fitness=creator.FitnessMulti)
+    # Génération des individus via notre fichier strategy_genes corrigé
+    toolbox.register("individual", tools.initIterate, creator.Individual, generate_individual)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
-def eval_genome(individual, data):
-    """
-    Evaluation function wrapper.
-    Must be top-level for Windows multiprocessing pickling.
-    """
-    try:
-        params = decode_chromosome(individual)
-        # Run backtest
-        profit, drawdown = run_backtest(params, data)
-        return (profit, drawdown)
-    except Exception:
-        return (-100.0, 100.0)
-
-# --- STATISTIQUES CORRIGÉES (Gèrent des scalaires uniquement) ---
-def stats_mean(ind_fits):
-    # ind_fits est maintenant une liste de floats (Profit uniquement)
-    valid_vals = [x for x in ind_fits if np.isfinite(x)]
-    return np.mean(valid_vals) if valid_vals else 0.0
-
-def stats_std(ind_fits):
-    valid_vals = [x for x in ind_fits if np.isfinite(x)]
-    return np.std(valid_vals) if valid_vals else 0.0
-
-def stats_min(ind_fits):
-    valid_vals = [x for x in ind_fits if np.isfinite(x)]
-    return np.min(valid_vals) if valid_vals else -100.0
-
-def stats_max(ind_fits):
-    valid_vals = [x for x in ind_fits if np.isfinite(x)]
-    return np.max(valid_vals) if valid_vals else -100.0
-
-
-class GAEcosystem:
-    """
-    Manages the Genetic Algorithm evolution process.
-    """
+    # Opérateurs génétiques
+    toolbox.register("mate", tools.cxTwoPoint) # Croisement
+    toolbox.register("mutate", mutate_individual, indpb=0.2) # Mutation
+    toolbox.register("select", tools.selTournament, tournsize=3) # Sélection
     
-    def __init__(self, data):
-        self.data = data
-        self.toolbox = base.Toolbox()
-        self._setup_toolbox()
-        
-    def _setup_toolbox(self):
-        """Register genetic operators."""
-        bounds = Config.GENE_BOUNDS
-        
-        self.toolbox.register("attr_sma_f", random.randint, *bounds['SMA_F'])
-        self.toolbox.register("attr_sma_s", random.randint, *bounds['SMA_S'])
-        self.toolbox.register("attr_rsi_p", random.randint, *bounds['RSI_P'])
-        self.toolbox.register("attr_rsi_up", random.randint, *bounds['RSI_UP'])
-        self.toolbox.register("attr_rsi_lo", random.randint, *bounds['RSI_LO'])
-        self.toolbox.register("attr_sl", random.uniform, *bounds['SL'])
-        self.toolbox.register("attr_tp", random.uniform, *bounds['TP'])
-        
-        self.toolbox.register("individual", tools.initCycle, creator.Individual,
-                            (self.toolbox.attr_sma_f, self.toolbox.attr_sma_s,
-                             self.toolbox.attr_rsi_p, self.toolbox.attr_rsi_up,
-                             self.toolbox.attr_rsi_lo, self.toolbox.attr_sl,
-                             self.toolbox.attr_tp), n=1)
-                             
-        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-        
-        self.toolbox.register("evaluate", eval_genome, data=self.data)
-        self.toolbox.register("mate", tools.cxTwoPoint)
-        self.toolbox.register("mutate", self._custom_mutation)
-        self.toolbox.register("select", tools.selNSGA2)
-        
-    def _custom_mutation(self, individual, indpb=0.2):
-        """Custom mutation handling mix of int and float."""
-        for i in range(len(individual)):
-            if random.random() < indpb:
-                if i < 5: # Integer genes
-                    individual[i] = int(individual[i] + random.randint(-5, 5))
-                    if individual[i] < 5: individual[i] = 5
-                else: # Float genes
-                    individual[i] += random.gauss(0, 0.02)
-                    if individual[i] < 0.01: individual[i] = 0.01
-        return individual,
+    # La fonction d'évaluation critique
+    toolbox.register("evaluate", lambda ind: evaluate_logic(ind, data_path))
 
-    def run_evolution(self, population_size=Config.GA_POPULATION, generations=Config.GA_GENERATIONS, verbose=True):
-        """Run the evolution loop."""
-        
-        pop = self.toolbox.population(n=population_size)
-        
-        # --- CORRECTION MAJEURE ICI ---
-        # On ne passe que l'index [0] (Le Profit) aux statistiques.
-        # Cela évite l'erreur "ambiguous truth value" car on traite des nombres simples, pas des couples.
-        stats = tools.Statistics(lambda ind: ind.fitness.values[0])
-        
-        stats.register("avg", stats_mean)
-        stats.register("std", stats_std)
-        stats.register("min", stats_min)
-        stats.register("max", stats_max)
-        
-        pop, logbook = algorithms.eaSimple(pop, self.toolbox, 
-                                         cxpb=Config.GA_CXPB, 
-                                         mutpb=Config.GA_MUTPB, 
-                                         ngen=generations, 
-                                         stats=stats, 
-                                         verbose=verbose)
-                                         
-        return pop, logbook
+    return toolbox
+
+def mutate_individual(individual, indpb):
+    """Mutation personnalisée qui respecte les plages de strategy_genes"""
+    ranges = get_gene_ranges()
+    for gene in individual:
+        if random.random() < indpb:
+            params = ranges[gene]
+            # Mutation simple : on tire une nouvelle valeur dans la plage
+            if isinstance(params['min'], int):
+                 individual[gene] = random.randrange(params['min'], params['max'] + 1, params['step'])
+            else:
+                 steps = int((params['max'] - params['min']) / params['step'])
+                 individual[gene] = params['min'] + (random.randint(0, steps) * params['step'])
+    return individual,
+
+def evaluate_logic(individual, data_path):
+    """
+    Fonction de fitness (Score)
+    CORRECTION EVOLIA : Pénalité stricte pour l'inactivité.
+    """
+    # 1. Vérification de cohérence (Double sécurité)
+    if individual['SMA_F'] >= individual['SMA_S']:
+        return -100.0, # Pénalité immédiate si Fast >= Slow
+
+    # 2. Lancement du backtest
+    stats = run_backtest_with_params(data_path, individual)
+    
+    # 3. Récupération des métriques
+    profit = stats['Return [%]']
+    trades = stats['# Trades']
+    max_dd = stats['Max. Drawdown [%]']
+
+    # 4. PENALITÉ D'INACTIVITÉ (Le correctif majeur)
+    # Si moins de 10 trades sur 2 ans, la stratégie est considérée comme nulle.
+    if trades < 10:
+        return -50.0, # Score artificiellement bas pour éliminer ces gènes
+    
+    # 5. Pénalité de risque (Optionnel : on n'aime pas les gros drawdowns)
+    if max_dd > 30: # Si drawdown > 30%
+        profit -= 20 # On enlève 20% de performance au score
+
+    return profit,
+
+def run_genetic_algo(data_path, pop_size=50, n_gen=10):
+    toolbox = get_toolbox(data_path)
+    pop = toolbox.population(n=pop_size)
+    
+    # Statistiques pour les logs
+    stats = tools.Statistics(lambda ind: ind.fitness.values)
+    stats.register("avg", np.mean)
+    stats.register("min", np.min)
+    stats.register("max", np.max)
+    
+    print(f"--- Démarrage Algorithme Génétique (Pop: {pop_size}, Gen: {n_gen}) ---")
+    
+    # Lancement de l'évolution
+    pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, 
+                                       ngen=n_gen, stats=stats, verbose=True)
+    
+    best_ind = tools.selBest(pop, 1)[0]
+    return best_ind, logbook

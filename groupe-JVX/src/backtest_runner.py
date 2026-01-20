@@ -1,147 +1,117 @@
-"""
-Backtest runner module using Backtrader engine.
-"""
-import backtrader as bt
+# groupe-JVX/src/backtest_runner.py
+from backtesting import Backtest, Strategy
 import pandas as pd
-import datetime
-import traceback
-from typing import Tuple, Dict
-from src.strategy_genes import GeneticStrategy
-from src.config import Config
+import numpy as np
 
+# --- DÉFINITION DES INDICATEURS (SANS TA-LIB) ---
 
-class PandasData(bt.feeds.PandasData):
-    params = (
-        ('datetime', None),
-        ('open', 'Open'),
-        ('high', 'High'),
-        ('low', 'Low'),
-        ('close', 'Close'),
-        ('volume', 'Volume'),
-        ('openinterest', None),
-    )
-
-
-def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[float, float]:
-    # Cette fonction est utilisée par le GA (training), pas besoin de modif ici
-    try:
-        if data_feed.empty or len(data_feed) < 100:
-            return (-100.0, 100.0)
-        
-        cerebro = bt.Cerebro()
-        cerebro.addstrategy(GeneticStrategy, **params)
-        data = PandasData(dataname=data_feed)
-        cerebro.adddata(data)
-        cerebro.broker.setcash(Config.INITIAL_CASH)
-        cerebro.broker.setcommission(commission=Config.get_commission())
-        cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
-        cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-        
-        results = cerebro.run()
-        strat = results[0]
-        
-        trade_analysis = strat.analyzers.trades.get_analysis()
-        total_trades = trade_analysis.get('total', {}).get('closed', 0)
-        
-        if total_trades == 0:
-            return (-100.0, 100.0)
-        
-        initial_value = cerebro.broker.get_cash() 
-        final_value = cerebro.broker.getvalue()
-        
-        profit_pct = ((final_value - Config.INITIAL_CASH) / Config.INITIAL_CASH) * 100.0
-        
-        dd_analysis = strat.analyzers.drawdown.get_analysis()
-        max_drawdown_pct = dd_analysis.get('max', {}).get('drawdown', 0.0)
-        
-        if pd.isna(profit_pct) or pd.isna(max_drawdown_pct):
-            return (-100.0, 100.0)
-        
-        return (profit_pct, max_drawdown_pct)
-        
-    except Exception:
-        return (float('-inf'), float('+inf'))
-
-
-def run_simple_backtest(params: Dict[str, float], 
-                       data_feed: pd.DataFrame,
-                       initial_cash: float = Config.INITIAL_CASH,
-                       verbose: bool = True,
-                       trading_start_date: datetime.date = None) -> Dict: # [CORRECTION] Nouvel argument
+def SMA(array, n):
     """
-    Run a simple backtest and return detailed results.
+    Moyenne Mobile Simple (Simple Moving Average)
+    Calculée via Pandas rolling mean.
+    """
+    return pd.Series(array).rolling(n).mean()
+
+def RSI(array, n):
+    """
+    Relative Strength Index (RSI)
+    Implémentation vectorisée avec Pandas (Wilder's Smoothing).
+    """
+    series = pd.Series(array)
+    delta = series.diff()
+    
+    # Séparation des gains et des pertes
+    gain = delta.clip(lower=0)
+    loss = -1 * delta.clip(upper=0)
+    
+    # Calcul de la moyenne mobile exponentielle (EWM)
+    # Note: Pour le RSI, alpha = 1/n correspond au lissage de Wilder standard
+    avg_gain = gain.ewm(alpha=1/n, min_periods=n, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/n, min_periods=n, adjust=False).mean()
+    
+    rs = avg_gain / avg_loss
+    
+    # Gestion de la division par zéro (si avg_loss est 0)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50) # Valeur neutre pour le début de l'historique
+
+# --- STRATÉGIE ---
+
+class GenStrategy(Strategy):
+    # Les paramètres par défaut seront écrasés par l'AG
+    SMA_F = 10
+    SMA_S = 50
+    RSI_P = 14
+    RSI_LO = 30
+    RSI_UP = 70
+    SL = 0.05
+    TP = 0.10
+
+    def init(self):
+        # Pré-calcul des indicateurs SANS TA-Lib
+        # self.I() enregistre la fonction pour qu'elle soit exécutée et plottable
+        self.sma_f = self.I(SMA, self.data.Close, self.SMA_F)
+        self.sma_s = self.I(SMA, self.data.Close, self.SMA_S)
+        self.rsi = self.I(RSI, self.data.Close, self.RSI_P)
+
+    def next(self):
+        # Gestion des positions
+        price = self.data.Close[-1]
+
+        # Si nous n'avons pas de position, nous cherchons à entrer
+        if not self.position:
+            # CONDITION D'ACHAT (Long)
+            # 1. Tendance haussière (Fast > Slow)
+            # 2. Repli temporaire (RSI < Seuil Bas)
+            if self.sma_f[-1] > self.sma_s[-1] and self.rsi[-1] < self.RSI_LO:
+                
+                # Calcul dynamique du SL et TP
+                sl_price = price * (1 - self.SL)
+                tp_price = price * (1 + self.TP)
+                
+                self.buy(sl=sl_price, tp=tp_price)
+
+        # Si nous avons une position, nous laissons le SL/TP gérer la sortie
+        # ou nous pourrions ajouter une condition de sortie ici.
+
+def run_backtest_with_params(data_path, params):
+    """
+    Exécute un backtest unique avec les paramètres fournis par l'AG.
     """
     try:
-        # Sécurité : Vérifier si on a assez de données pour les indicateurs
-        max_period_needed = params.get('SMA_S', 200)
-        # Note : Avec le warm-up, data_feed est plus grand, donc ce check passe plus facilement
-        if len(data_feed) < max_period_needed:
-            if verbose: print(f"Warning: Not enough data ({len(data_feed)}) for SMA_S ({max_period_needed}). Skipping.")
-            raise ValueError("Not enough data for indicators")
+        # Chargement des données
+        # On force le parsing des dates pour éviter les erreurs d'index
+        data = pd.read_csv(data_path, index_col='Date', parse_dates=True)
+        
+        # Nettoyage basique
+        data = data.dropna()
+        
+        # Vérification si les données sont suffisantes pour les indicateurs
+        max_lookback = max(params.get('SMA_S', 200), params.get('SMA_F', 50))
+        if len(data) < max_lookback:
+            # Retourne un résultat vide/nul si pas assez de données
+            return {'Return [%]': -100, '# Trades': 0, 'Max. Drawdown [%]': 100}
 
-        cerebro = bt.Cerebro()
-        
-        # [CORRECTION] Injection de la date de démarrage dans les paramètres de la stratégie
-        strategy_params = params.copy()
-        if trading_start_date:
-            strategy_params['trading_start_date'] = trading_start_date
-            
-        cerebro.addstrategy(GeneticStrategy, **strategy_params)
-        
-        data = PandasData(dataname=data_feed)
-        cerebro.adddata(data)
-        
-        cerebro.broker.setcash(initial_cash)
-        cerebro.broker.setcommission(commission=Config.get_commission())
-        
-        cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
-        cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-        cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
-        
-        initial_value = cerebro.broker.getvalue()
-        results = cerebro.run()
-        final_value = cerebro.broker.getvalue()
-        
-        strat = results[0]
-        
-        trade_analysis = strat.analyzers.trades.get_analysis()
-        dd_analysis = strat.analyzers.drawdown.get_analysis()
-        sharpe = strat.analyzers.sharpe.get_analysis()
-        
-        total_trades = trade_analysis.get('total', {}).get('closed', 0)
-        won_trades = trade_analysis.get('won', {}).get('total', 0)
-        lost_trades = trade_analysis.get('lost', {}).get('total', 0)
-        max_drawdown = dd_analysis.get('max', {}).get('drawdown', 0.0)
-        sharpe_ratio = sharpe.get('sharperatio', 0.0)
+        # Configuration de la stratégie avec les paramètres de l'individu
+        # On crée une sous-classe dynamique pour injecter les paramètres
+        class IndividualStrategy(GenStrategy):
+            SMA_F = int(params['SMA_F'])
+            SMA_S = int(params['SMA_S'])
+            RSI_P = int(params['RSI_P'])
+            RSI_LO = int(params['RSI_LO'])
+            RSI_UP = int(params['RSI_UP'])
+            SL = float(params['SL'])
+            TP = float(params['TP'])
 
-        results_dict = {
-            'initial_value': initial_value,
-            'final_value': final_value,
-            'profit': final_value - initial_value,
-            'profit_pct': ((final_value - initial_value) / initial_value) * 100,
-            'total_trades': total_trades,
-            'won_trades': won_trades,
-            'lost_trades': lost_trades,
-            'win_rate': (won_trades / total_trades * 100) if total_trades > 0 else 0,
-            'max_drawdown': max_drawdown,
-            'sharpe_ratio': sharpe_ratio if sharpe_ratio is not None else 0,
-        }
+        # Lancement du backtest
+        # Cash initial réaliste (ex: 10,000$)
+        # Commission standard crypto (0.1% = 0.001)
+        bt = Backtest(data, IndividualStrategy, cash=10000, commission=0.001)
         
-        if verbose:
-            print(f"  > Result: Profit {results_dict['profit_pct']:.2f}% | Trades: {total_trades}")
-        
-        return results_dict
+        stats = bt.run()
+        return stats
         
     except Exception as e:
-        print(f"\n!!! BACKTEST ERROR: {e}")
-        return {
-            'error': str(e),
-            'profit_pct': 0.0,
-            'max_drawdown': 0.0,
-            'total_trades': 0,
-            'won_trades': 0,
-            'lost_trades': 0,
-            'win_rate': 0.0,
-            'initial_value': initial_cash, # Correction mineure ici aussi (initial_value pas défini si crash avant)
-            'final_value': initial_cash
-        }
+        print(f"Erreur Backtest: {e}")
+        # En cas de crash (ex: données corrompues), on retourne un score pénalisant
+        return {'Return [%]': -100, '# Trades': 0, 'Max. Drawdown [%]': 100}
