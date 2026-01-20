@@ -3,6 +3,7 @@ Backtest runner module using Backtrader engine.
 """
 import backtrader as bt
 import pandas as pd
+import traceback
 from typing import Tuple, Dict
 from src.strategy_genes import GeneticStrategy
 from src.config import Config
@@ -26,13 +27,6 @@ class PandasData(bt.feeds.PandasData):
 def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[float, float]:
     """
     Run a backtest with given strategy parameters and data.
-    
-    Args:
-        params: Strategy parameters dictionary
-        data_feed: Pandas DataFrame with OHLCV data
-        
-    Returns:
-        Tuple[float, float]: (profit_percentage, max_drawdown_percentage)
     """
     try:
         # Validate data
@@ -70,8 +64,9 @@ def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[flo
         # Get trade analyzer
         trade_analysis = strat.analyzers.trades.get_analysis()
         
-        # Check if any trades were made
-        total_trades = trade_analysis.total.closed if hasattr(trade_analysis, 'total') else 0
+        # --- CORRECTION: Accès sécurisé via .get() ---
+        # Si 'total' n'existe pas, on considère qu'il y a 0 trades
+        total_trades = trade_analysis.get('total', {}).get('closed', 0)
         
         if total_trades == 0:
             # No trades executed
@@ -82,7 +77,8 @@ def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[flo
         
         # Get drawdown
         dd_analysis = strat.analyzers.drawdown.get_analysis()
-        max_drawdown_pct = dd_analysis.max.drawdown if hasattr(dd_analysis, 'max') else 0.0
+        # Correction similaire pour le drawdown
+        max_drawdown_pct = dd_analysis.get('max', {}).get('drawdown', 0.0)
         
         # Handle invalid values
         if pd.isna(profit_pct) or pd.isna(max_drawdown_pct):
@@ -91,12 +87,12 @@ def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[flo
         return (profit_pct, max_drawdown_pct)
         
     except ZeroDivisionError:
-        # Handle division by zero
         return (float('-inf'), float('+inf'))
     
-    except Exception as e:
-        # Any other error - return worst possible fitness
-        print(f"Backtest error: {e}")
+    except Exception:
+        # En cas d'autre crash, on l'affiche mais on ne tue pas le programme
+        # print("\n!!! BACKTEST CRASH !!!")
+        # traceback.print_exc()
         return (float('-inf'), float('+inf'))
 
 
@@ -106,15 +102,6 @@ def run_simple_backtest(params: Dict[str, float],
                        verbose: bool = True) -> Dict:
     """
     Run a simple backtest and return detailed results.
-    
-    Args:
-        params: Strategy parameters
-        data_feed: Market data
-        initial_cash: Starting capital
-        verbose: Print results
-        
-    Returns:
-        Dict: Detailed backtest results
     """
     try:
         cerebro = bt.Cerebro()
@@ -141,10 +128,14 @@ def run_simple_backtest(params: Dict[str, float],
         dd_analysis = strat.analyzers.drawdown.get_analysis()
         sharpe = strat.analyzers.sharpe.get_analysis()
         
-        total_trades = trade_analysis.total.closed if hasattr(trade_analysis, 'total') else 0
-        won_trades = trade_analysis.won.total if hasattr(trade_analysis, 'won') else 0
-        lost_trades = trade_analysis.lost.total if hasattr(trade_analysis, 'lost') else 0
+        # --- CORRECTION: Accès sécurisé pour tous les champs ---
+        total_trades = trade_analysis.get('total', {}).get('closed', 0)
+        won_trades = trade_analysis.get('won', {}).get('total', 0)
+        lost_trades = trade_analysis.get('lost', {}).get('total', 0)
         
+        max_drawdown = dd_analysis.get('max', {}).get('drawdown', 0.0)
+        sharpe_ratio = sharpe.get('sharperatio', 0.0)
+
         results_dict = {
             'initial_value': initial_value,
             'final_value': final_value,
@@ -154,8 +145,8 @@ def run_simple_backtest(params: Dict[str, float],
             'won_trades': won_trades,
             'lost_trades': lost_trades,
             'win_rate': (won_trades / total_trades * 100) if total_trades > 0 else 0,
-            'max_drawdown': dd_analysis.max.drawdown if hasattr(dd_analysis, 'max') else 0,
-            'sharpe_ratio': sharpe.get('sharperatio', 0),
+            'max_drawdown': max_drawdown,
+            'sharpe_ratio': sharpe_ratio if sharpe_ratio is not None else 0,
         }
         
         if verbose:
@@ -174,10 +165,11 @@ def run_simple_backtest(params: Dict[str, float],
         
         return results_dict
         
-    except Exception as e:
-        print(f"Error in backtest: {e}")
+    except Exception:
+        print("\n!!! BACKTEST CRASH (Simple Mode) !!!")
+        traceback.print_exc()
         return {
-            'error': str(e),
+            'error': 'Crash detected',
             'profit_pct': -100.0,
             'max_drawdown': 100.0,
         }
