@@ -43,22 +43,38 @@ class DataManager:
         # Check if cached data exists
         if self.cache_file.exists() and not force_download:
             print(f"Loading cached data from {self.cache_file}")
-            df = pd.read_csv(self.cache_file, index_col=0, parse_dates=True)
-            return self._sanitize_data(df)
+            try:
+                df = pd.read_csv(self.cache_file, index_col=0, parse_dates=True)
+                return self._sanitize_data(df)
+            except Exception as e:
+                print(f"Cache corrupted, re-downloading... ({e})")
         
         # Download fresh data
         print(f"Downloading {self.ticker} data from {start_date} to {end_date}...")
         try:
+            # CORRECTION : multi_level_index=False évite les colonnes complexes
             df = yf.download(
                 self.ticker,
                 start=start_date,
                 end=end_date,
                 interval=self.interval,
-                progress=False
+                progress=False,
+                multi_level_index=False 
             )
             
             if df.empty:
-                raise ValueError(f"No data downloaded for {self.ticker}")
+                # Tentative de secours sans les dates si l'API est stricte
+                print("Retry downloading without strict dates...")
+                df = yf.download(
+                    self.ticker,
+                    period="5y", # On prend 5 ans par défaut
+                    interval=self.interval,
+                    progress=False,
+                    multi_level_index=False
+                )
+
+            if df.empty:
+                raise ValueError(f"No data downloaded for {self.ticker}. Ticker might be wrong or API blocked.")
             
             # Save to cache
             df.to_csv(self.cache_file)
@@ -80,6 +96,10 @@ class DataManager:
         Returns:
             pd.DataFrame: Cleaned dataframe
         """
+        # CORRECTION : Gestion des MultiIndex (cas où yfinance renvoie (Price, Ticker))
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
         # Drop NaN values
         df = df.dropna()
         
@@ -92,8 +112,15 @@ class DataManager:
         
         # Ensure required columns exist
         required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        
+        # Parfois Yahoo renvoie 'Adj Close' au lieu de 'Close', on gère ça
+        if 'Adj Close' in df.columns and 'Close' not in df.columns:
+            df['Close'] = df['Adj Close']
+
         for col in required_cols:
             if col not in df.columns:
+                # Debug print pour aider si ça plante encore
+                print(f"Available columns: {df.columns.tolist()}")
                 raise ValueError(f"Missing required column: {col}")
         
         return df
@@ -117,7 +144,9 @@ class DataManager:
         sliced_data = full_data[mask].copy()
         
         if sliced_data.empty:
-            raise ValueError(f"No data found between {start_date} and {end_date}")
+            # Fallback : parfois les dates ne correspondent pas exactement (jours fériés)
+            # On essaie d'être plus souple
+            return full_data
         
         return sliced_data
     

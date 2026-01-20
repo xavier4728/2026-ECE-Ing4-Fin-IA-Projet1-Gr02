@@ -65,15 +65,15 @@ pandas==2.0.3
 matplotlib==3.7.2
 💻 Utilisation
 Mode Test (Téléchargement des données uniquement)
-bashpython main.py --mode test
+python main.py --mode test
 Mode Simple (Optimisation GA unique)
-bashpython main.py --mode simple
+python main.py --mode simple
 Mode Walk-Forward Analysis
-bashpython main.py --mode wfa
+python main.py --mode wfa
 Mode Complet (Pipeline complet)
-bashpython main.py --mode all
+python main.py --mode all
 Options avancées
-bashpython main.py --mode wfa --ticker SPY --generations 20 --population 100
+python main.py --mode wfa --ticker SPY --generations 20 --population 100
 Paramètres CLI disponibles
 
 --mode : Mode d'exécution (test, simple, wfa, all)
