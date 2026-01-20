@@ -3,6 +3,7 @@ Backtest runner module using Backtrader engine.
 """
 import backtrader as bt
 import pandas as pd
+import datetime
 import traceback
 from typing import Tuple, Dict
 from src.strategy_genes import GeneticStrategy
@@ -22,6 +23,7 @@ class PandasData(bt.feeds.PandasData):
 
 
 def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[float, float]:
+    # Cette fonction est utilisée par le GA (training), pas besoin de modif ici
     try:
         if data_feed.empty or len(data_feed) < 100:
             return (-100.0, 100.0)
@@ -44,9 +46,9 @@ def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[flo
         if total_trades == 0:
             return (-100.0, 100.0)
         
-        initial_value = cerebro.broker.get_cash() # Fallback safe
+        initial_value = cerebro.broker.get_cash() 
         final_value = cerebro.broker.getvalue()
-        # Calcul profit safe
+        
         profit_pct = ((final_value - Config.INITIAL_CASH) / Config.INITIAL_CASH) * 100.0
         
         dd_analysis = strat.analyzers.drawdown.get_analysis()
@@ -64,19 +66,27 @@ def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[flo
 def run_simple_backtest(params: Dict[str, float], 
                        data_feed: pd.DataFrame,
                        initial_cash: float = Config.INITIAL_CASH,
-                       verbose: bool = True) -> Dict:
+                       verbose: bool = True,
+                       trading_start_date: datetime.date = None) -> Dict: # [CORRECTION] Nouvel argument
     """
     Run a simple backtest and return detailed results.
     """
     try:
         # Sécurité : Vérifier si on a assez de données pour les indicateurs
         max_period_needed = params.get('SMA_S', 200)
+        # Note : Avec le warm-up, data_feed est plus grand, donc ce check passe plus facilement
         if len(data_feed) < max_period_needed:
             if verbose: print(f"Warning: Not enough data ({len(data_feed)}) for SMA_S ({max_period_needed}). Skipping.")
             raise ValueError("Not enough data for indicators")
 
         cerebro = bt.Cerebro()
-        cerebro.addstrategy(GeneticStrategy, **params)
+        
+        # [CORRECTION] Injection de la date de démarrage dans les paramètres de la stratégie
+        strategy_params = params.copy()
+        if trading_start_date:
+            strategy_params['trading_start_date'] = trading_start_date
+            
+        cerebro.addstrategy(GeneticStrategy, **strategy_params)
         
         data = PandasData(dataname=data_feed)
         cerebro.adddata(data)
@@ -123,16 +133,15 @@ def run_simple_backtest(params: Dict[str, float],
         return results_dict
         
     except Exception as e:
-        # CORRECTION DU BUG ICI : On renvoie TOUTES les clés nécessaires
         print(f"\n!!! BACKTEST ERROR: {e}")
         return {
             'error': str(e),
             'profit_pct': 0.0,
             'max_drawdown': 0.0,
-            'total_trades': 0,    # C'était la clé manquante !
+            'total_trades': 0,
             'won_trades': 0,
             'lost_trades': 0,
             'win_rate': 0.0,
-            'initial_value': initial_value,
-            'final_value': initial_value
+            'initial_value': initial_cash, # Correction mineure ici aussi (initial_value pas défini si crash avant)
+            'final_value': initial_cash
         }

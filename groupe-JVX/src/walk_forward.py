@@ -19,7 +19,7 @@ class WalkForwardAnalyzer:
         
     def run_analysis(self):
         print("\n" + "="*70)
-        print("STARTING WALK-FORWARD ANALYSIS")
+        print("STARTING WALK-FORWARD ANALYSIS (WITH WARM-UP)")
         print("="*70)
         
         # Get full dataset
@@ -51,11 +51,16 @@ class WalkForwardAnalyzer:
             print(f"Test:  {train_end.date()} -> {test_end.date()}")
             
             # 1. Get Data Slices
-            # Utilisation des strings pour éviter les bugs de slice pandas
-            train_data = self.dm.get_data_slice(str(current_train_start.date()), str(train_end.date()))
-            test_data = self.dm.get_data_slice(str(train_end.date()), str(test_end.date()))
+            # [CORRECTION] Calcul du buffer de chauffe (6 mois avant le début du test)
+            warmup_start = train_end - relativedelta(months=6)
             
-            if len(train_data) < 50 or len(test_data) < 10:
+            # Train data (inchangé)
+            train_data = self.dm.get_data_slice(str(current_train_start.date()), str(train_end.date()))
+            
+            # Test data [CORRECTION] : On charge depuis warmup_start
+            test_data_with_warmup = self.dm.get_data_slice(str(warmup_start.date()), str(test_end.date()))
+            
+            if len(train_data) < 50 or len(test_data_with_warmup) < 50:
                 print("Skipping window: Not enough data.")
                 current_train_start += relativedelta(months=Config.WFA_STEP_MONTHS)
                 continue
@@ -67,15 +72,21 @@ class WalkForwardAnalyzer:
             pop, log = ga.run_evolution(population_size=30, generations=5, verbose=False)
             
             # Select Best Individual (Max Profit)
-            # Note: NSGA2 returns a Pareto front. We pick the one with max profit for simplicity here.
             best_ind = max(pop, key=lambda ind: ind.fitness.values[0])
             best_params = decode_chromosome(best_ind)
             
             print(f"  > Best Params: SMA_F={best_params['SMA_F']}, SMA_S={best_params['SMA_S']}")
             
             # 3. Validation (Test)
-            print("  > Testing on unseen data...")
-            result = run_simple_backtest(best_params, test_data, verbose=False)
+            print("  > Testing on unseen data (with warm-up)...")
+            
+            # [CORRECTION] On passe les données avec warm-up + la date de début de trading réel
+            result = run_simple_backtest(
+                best_params, 
+                test_data_with_warmup, 
+                verbose=False,
+                trading_start_date=train_end.date() # La stratégie attendra cette date pour trader
+            )
             
             window_result = {
                 'window': window_count,

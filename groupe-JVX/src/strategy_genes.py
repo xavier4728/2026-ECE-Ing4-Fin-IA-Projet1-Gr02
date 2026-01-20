@@ -2,6 +2,7 @@
 Backtrader strategy implementation with genetic algorithm parameters.
 """
 import backtrader as bt
+import datetime
 from typing import Dict
 
 class GeneticStrategy(bt.Strategy):
@@ -17,6 +18,7 @@ class GeneticStrategy(bt.Strategy):
         ('RSI_LO', 30),     # RSI oversold threshold
         ('SL', 0.05),       # Stop Loss percentage
         ('TP', 0.10),       # Take Profit percentage
+        ('trading_start_date', None), # [CORRECTION] Nouveau paramètre pour le Warm-up
     )
     
     def __init__(self):
@@ -49,15 +51,22 @@ class GeneticStrategy(bt.Strategy):
     
     def next(self):
         """Logique exécutée à chaque bougie."""
+        
+        # [CORRECTION] Gestion du Warm-up
+        # Si une date de démarrage est définie, on attend qu'elle soit atteinte
+        # Les indicateurs continuent de se calculer en arrière-plan
+        if self.params.trading_start_date:
+            current_date = self.data.datetime.date(0)
+            if current_date < self.params.trading_start_date:
+                return
+
         # 1. Sécurité : Si paramètres invalides ou ordre en cours, on ne fait rien
         if not self.valid_params or self.order:
             return
         
         # 2. Logique d'Entrée (ACHAT)
         if not self.position:
-            # CORRECTION MAJEURE ICI :
             # On achète le "Dip" (RSI bas) dans une tendance haussière (Fast > Slow).
-            # On a RETIRÉ la condition (Close > Fast) qui bloquait tout.
             if (self.sma_fast[0] > self.sma_slow[0] and 
                 self.rsi[0] < self.params.RSI_LO):
                 
