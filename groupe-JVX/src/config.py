@@ -1,7 +1,7 @@
 """
 Central configuration module.
 """
-from typing import Dict, Any
+from typing import Dict
 
 class Config:
     # === Market Data ===
@@ -16,7 +16,6 @@ class Config:
     
     # === Backtesting ===
     INITIAL_CASH: float = 10_000.0
-    # Frais un peu plus réalistes (0.1%)
     COMMISSION_CRYPTO: float = 0.001 
     COMMISSION_STOCK: float = 0.0001
     
@@ -27,25 +26,25 @@ class Config:
         return cls.COMMISSION_STOCK
     
     # === Genetic Algorithm ===
-    GA_POPULATION: int = 50
-    GA_GENERATIONS: int = 10
+    GA_POPULATION: int = 40  # Légèrement réduit pour aller plus vite
+    GA_GENERATIONS: int = 8
     GA_CXPB: float = 0.7
     GA_MUTPB: float = 0.2
     
     # === Walk-Forward Analysis ===
     WFA_TRAIN_MONTHS: int = 12
-    WFA_TEST_MONTHS: int = 3
+    WFA_TEST_MONTHS: int = 6   # AUGMENTÉ (3->6) pour avoir assez de données
     WFA_STEP_MONTHS: int = 3
     
-    # === Gene Bounds (Assouplis pour garantir des trades) ===
+    # === Gene Bounds ===
     GENE_BOUNDS: Dict[str, tuple] = {
-        'SMA_F': (5, 60),       # Moyenne rapide
-        'SMA_S': (70, 200),     # Moyenne lente (doit être > SMA_F)
-        'RSI_P': (5, 25),       # Période RSI
-        'RSI_UP': (65, 90),     # Seuil surachat
-        'RSI_LO': (15, 45),     # Seuil survente (Élargi jusqu'à 45 pour capter + de trades)
-        'SL': (0.01, 0.15),     # Stop Loss (1% à 15%)
-        'TP': (0.02, 0.30),     # Take Profit (2% à 30%)
+        'SMA_F': (5, 40),       
+        'SMA_S': (50, 90),      # RÉDUIT (200->90) pour éviter le crash "IndexError"
+        'RSI_P': (5, 25),       
+        'RSI_UP': (65, 90),     
+        'RSI_LO': (20, 55),     # ÉLARGI (45->55) pour forcer plus d'achats
+        'SL': (0.01, 0.15),     
+        'TP': (0.02, 0.30),     
     }
     
     # === Paths ===
