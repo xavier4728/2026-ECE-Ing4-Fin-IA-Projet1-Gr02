@@ -54,6 +54,8 @@ Prérequis
 Python 3.10 ou 3.11 (éviter 3.12+)
 Windows 10/11 (optimisé pour Windows)
 
+.\.venv\Scripts\Activate.ps1
+
 Installation des dépendances
 bashpip install -r requirements.txt
 Contenu de requirements.txt
@@ -63,6 +65,7 @@ yfinance==0.2.28
 numpy==1.24.3
 pandas==2.0.3
 matplotlib==3.7.2
+
 💻 Utilisation
 Mode Test (Téléchargement des données uniquement)
 python main.py --mode test

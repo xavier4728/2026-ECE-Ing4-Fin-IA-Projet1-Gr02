@@ -5,7 +5,7 @@ from typing import Dict
 
 class Config:
     # === Market Data ===
-    TICKER: str = "BTC-USD"
+    TICKER: str = "ETH-USD"
     INTERVAL: str = "1d"
     START_DATE: str = "2018-01-01" # On prend plus d'historique pour être large
     END_DATE: str = "2026-01-01"
