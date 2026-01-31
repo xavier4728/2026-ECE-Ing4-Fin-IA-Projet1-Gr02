@@ -161,4 +161,6 @@ WFA_STEP_MONTHS = 3      # Décalage de la fenêtre
 
 L'algorithme cherche à optimiser les 7 gènes suivants pour une stratégie de suivi de tendance (Trend Following) sur repli (Dip buying) :SMA_F (Fast Moving Average) : Période courte.SMA_S (Slow Moving Average) : Période longue.RSI_P : Période du RSI.RSI_UP : Seuil de surachat (Vente).RSI_LO : Seuil de survente (Achat).SL (Stop Loss) : % de perte max tolérée.TP (Take Profit) : % de gain cible.Logique d'achat : SMA_Fast > SMA_Slow (Tendance haussière) ET RSI < RSI_LO (Repli temporaire).
 
-📚 Références & BibliographieCe projet s'appuie sur les recherches académiques récentes :Robust Metaheuristic Optimization for Algorithmic Trading (MDPI, 2024).
+# 📚 Références & Bibliographie : 
+
+Ce projet s'appuie sur les recherches académiques récentes : Robust Metaheuristic Optimization for Algorithmic Trading (MDPI, 2024).
