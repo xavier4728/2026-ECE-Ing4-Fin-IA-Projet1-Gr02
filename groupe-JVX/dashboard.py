@@ -1,4 +1,13 @@
-# dashboard.py
+"""
+Module Dashboard (Interface Graphique).
+Ce module déploie une application web interactive avec Streamlit pour piloter
+le système de trading complet.
+
+Fonctionnalités principales :
+1. Visualisation des données de marché (Bougies, Volumes).
+2. Lancement et suivi en temps réel de l'optimisation génétique.
+3. Exécution et analyse des résultats de la validation Walk-Forward (WFA).
+"""
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,6 +19,7 @@ from src.walk_forward import WalkForwardAnalyzer
 from src.strategy_genes import decode_chromosome
 
 # --- CONFIGURATION DE LA PAGE ---
+# Définit le titre de l'onglet du navigateur et le mode "wide" pour utiliser tout l'écran.
 st.set_page_config(
     page_title="JVX ENGINE",
     layout="wide",
@@ -17,6 +27,8 @@ st.set_page_config(
 )
 
 # --- CHARTE GRAPHIQUE EVOLIA (CSS STRICT) ---
+# Injection de CSS personnalisé pour forcer un thème sombre "Cyberpunk/Finance"
+# et standardiser les boutons, les entrées de texte et les polices.
 st.markdown("""
     <style>
     /* IMPORT FONTS */
@@ -121,7 +133,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- SIDEBAR: SYSTEM CONTROLS ---
+# --- SIDEBAR: CONFIGURATION SYSTÈME ---
+# Panneau latéral pour le contrôle global des paramètres (Actif, Dates, Hyperparamètres GA)
 st.sidebar.markdown("### SYSTEM CONFIGURATION")
 
 st.sidebar.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
@@ -159,6 +172,16 @@ with col_head1:
 tab1, tab2, tab3 = st.tabs(["MARKET_DATA", "OPTIMIZATION_CORE", "WFA_ROBUSTNESS"])
 
 def get_candlestick_chart(df, title):
+    """
+    Génère un graphique en chandeliers japonais (Candlestick) avec Plotly.
+
+    Args:
+        df (pd.DataFrame): Données historiques (Open, High, Low, Close).
+        title (str): Titre du graphique (Ticker).
+
+    Returns:
+        go.Figure: Objet Figure Plotly prêt à être affiché.
+    """
     fig = go.Figure(data=[go.Candlestick(x=df.index,
                     open=df['Open'],
                     high=df['High'],
@@ -174,27 +197,31 @@ def get_candlestick_chart(df, title):
         font=dict(family="Roboto Mono", color="#aaa"),
         xaxis_rangeslider_visible=False
     )
+    # Grille subtile pour l'analyse technique
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#222')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#222')
     return fig
 
-# --- TAB 1: MARKET DATA ---
+# --- TAB 1: DONNÉES DE MARCHÉ (MARKET DATA) ---
 with tab1:
     st.markdown("<div class='projetstyle-box'>", unsafe_allow_html=True)
     
     col_ctrl, col_info = st.columns([1, 4])
     with col_ctrl:
+        # Bouton pour charger les données depuis Yahoo Finance
         if st.button("INITIALIZE DATA STREAM"):
             with st.spinner('ESTABLISHING CONNECTION...'):
                 try:
                     dm = DataManager()
                     df = dm.get_full_data()
+                    # Stockage des données en session pour persistance entre les rechargements
                     st.session_state['data'] = df
                     st.success("DATA SYNC COMPLETE")
                 except Exception as e:
                     st.error(f"CONNECTION FAILED: {e}")
                     
     with col_info:
+        # Affichage des métadonnées du dataset
         if 'data' in st.session_state:
             df = st.session_state['data']
             st.markdown(f"""
@@ -206,7 +233,8 @@ with tab1:
             """, unsafe_allow_html=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
-
+    
+    # Affichage du graphique si les données sont chargées
     if 'data' in st.session_state:
         # Correction warning: utilisation de use_container_width=True (standard moderne)
         st.plotly_chart(get_candlestick_chart(st.session_state['data'], ticker), use_container_width=True)
@@ -219,10 +247,11 @@ with tab1:
                 # Fallback pour compatibilité
                 st.dataframe(st.session_state['data'].style.highlight_max(axis=0), width=1500)
 
-# --- TAB 2: OPTIMIZATION CORE ---
+# --- TAB 2: CŒUR D'OPTIMISATION (OPTIMIZATION CORE) ---
 with tab2:
     col_opt_left, col_opt_right = st.columns([1, 2])
     
+    # Panneau de Contrôle (Gauche)
     with col_opt_left:
         st.markdown("<div class='projetstyle-box'>", unsafe_allow_html=True)
         st.markdown("### EXECUTION CONTROL")
@@ -235,6 +264,7 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
         
+        # Bouton de lancement de l'AG
         if st.button("INITIATE SEQUENCE"):
             dm = DataManager()
             full_data = dm.get_full_data()
@@ -266,6 +296,7 @@ with tab2:
                 
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Panneau de Résultats (Droite)
     with col_opt_right:
         if 'best_params' in st.session_state:
             st.markdown("<div class='projetstyle-box'>", unsafe_allow_html=True)
@@ -281,7 +312,7 @@ with tab2:
             
             st.markdown("---")
             
-            # --- CONVERGENCE CHART ---
+            # --- Graphique de Convergence ---
             if 'ga_log' in st.session_state:
                 log = st.session_state['ga_log']
                 gen = log.select("gen")
@@ -307,7 +338,7 @@ with tab2:
         else:
             st.info("AWAITING OPTIMIZATION SEQUENCE RESULTS...")
 
-# --- TAB 3: WFA ROBUSTNESS ---
+# --- TAB 3: ROBUSTESSE WFA (WALK-FORWARD ANALYSIS) ---
 with tab3:
     st.markdown("<div class='projetstyle-box'>", unsafe_allow_html=True)
     st.markdown("### WALK-FORWARD VALIDATION PROTOCOL")
@@ -337,17 +368,17 @@ with tab3:
                 import traceback
                 st.code(traceback.format_exc())
     
-    # --- WFA VISUALIZATION ---
+    # --- Visualisation des Résultats WFA ---
     if 'wfa_results' in st.session_state and st.session_state['wfa_results']:
         results = st.session_state['wfa_results']
         df_wfa = pd.DataFrame(results)
         
-        # Calculate Stats
+        # Calcul des statistiques globales
         total_profit = df_wfa['profit_pct'].sum()
         avg_win = df_wfa['profit_pct'].mean()
         win_rate = (df_wfa[df_wfa['profit_pct'] > 0].shape[0] / df_wfa.shape[0]) * 100
         
-        # Display Metrics
+        # Affichage des métriques clés
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("CUMULATIVE PROFIT", f"{total_profit:.2f}%")
         col_m2.metric("AVG WINDOW PROFIT", f"{avg_win:.2f}%")
@@ -355,15 +386,15 @@ with tab3:
         
         st.markdown("---")
         
-        # Create Charts
+        # Création des graphiques WFA (Barres + Courbe Cumulative)
         fig_wfa = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                                 subplot_titles=("PROFIT PER WINDOW (%)", "CUMULATIVE PROFIT (%)"),
                                 vertical_spacing=0.1)
         
-        # Color logic
+        # Logique de couleur (Vert si gain, Rouge si perte)
         colors = ['#4CAF50' if v >= 0 else '#EF5350' for v in df_wfa['profit_pct']]
         
-        # 1. Bar Chart (Per Window)
+        # 1. Bar Chart (Profit par fenêtre)
         fig_wfa.add_trace(go.Bar(
             x=df_wfa['window'], 
             y=df_wfa['profit_pct'],
@@ -371,7 +402,7 @@ with tab3:
             name="Window Profit"
         ), row=1, col=1)
         
-        # 2. Cumulative Line
+        # 2. Cumulative Line (Courbe de performance globale)
         df_wfa['cumulative'] = df_wfa['profit_pct'].cumsum()
         fig_wfa.add_trace(go.Scatter(
             x=df_wfa['window'], 

@@ -1,5 +1,7 @@
 """
-Backtest runner module using Backtrader engine.
+Module Backtest Runner.
+Ce module utilise le moteur Backtrader pour exécuter des simulations de trading
+basées sur les paramètres optimisés par l'algorithme génétique.
 """
 import backtrader as bt
 import pandas as pd
@@ -9,8 +11,15 @@ from typing import Tuple, Dict
 from src.strategy_genes import GeneticStrategy
 from src.config import Config
 
-
+#
+#
+#
 class PandasData(bt.feeds.PandasData):
+    """
+    Configuration personnalisée du flux de données pour Backtrader.
+    Définit comment mapper les colonnes d'un DataFrame Pandas aux champs 
+    attendus par le moteur de backtest.
+    """
     params = (
         ('datetime', None),
         ('open', 'Open'),
@@ -23,7 +32,17 @@ class PandasData(bt.feeds.PandasData):
 
 
 def run_backtest(params: Dict[str, float], data_feed: pd.DataFrame) -> Tuple[float, float]:
-    # Cette fonction est utilisée par le GA (training), pas besoin de modif ici
+    """
+    Exécute un backtest simplifié pour l'évaluation de l'algorithme génétique.
+
+    Args:
+        params (Dict[str, float]): Dictionnaire des paramètres de la stratégie (SMA, RSI, SL, TP).
+        data_feed (pd.DataFrame): Données historiques du marché.
+
+    Returns:
+        Tuple[float, float]: Un couple (profit_pourcentage, drawdown_maximal).
+        En cas d'échec ou d'absence de trade, retourne (-100.0, 100.0).
+    """
     try:
         if data_feed.empty or len(data_feed) < 100:
             return (-100.0, 100.0)
@@ -69,7 +88,20 @@ def run_simple_backtest(params: Dict[str, float],
                        verbose: bool = True,
                        trading_start_date: datetime.date = None) -> Dict: # [CORRECTION] Nouvel argument
     """
-    Run a simple backtest and return detailed results.
+    Exécute un backtest détaillé pour l'analyse finale ou l'affichage sur le dashboard.
+
+    Fournit des statistiques complètes incluant le ratio de Sharpe et le taux de victoire.
+
+    Args:
+        params (Dict[str, float]): Paramètres optimisés de la stratégie.
+        data_feed (pd.DataFrame): Données historiques (incluant éventuellement une période de warm-up).
+        initial_cash (float): Capital de départ. Par défaut celui de Config.
+        verbose (bool): Si True, affiche les résultats dans la console.
+        trading_start_date (datetime.date, optional): Date à laquelle les ordres commencent 
+            réellement à être passés (après la période de warm-up).
+
+    Returns:
+        Dict: Dictionnaire contenant les métriques de performance (profit, trades, win_rate, etc.).
     """
     try:
         # Sécurité : Vérifier si on a assez de données pour les indicateurs
@@ -81,7 +113,6 @@ def run_simple_backtest(params: Dict[str, float],
 
         cerebro = bt.Cerebro()
         
-        # [CORRECTION] Injection de la date de démarrage dans les paramètres de la stratégie
         strategy_params = params.copy()
         if trading_start_date:
             strategy_params['trading_start_date'] = trading_start_date
@@ -133,7 +164,7 @@ def run_simple_backtest(params: Dict[str, float],
         return results_dict
         
     except Exception as e:
-        print(f"\n!!! BACKTEST ERROR: {e}")
+        print(f"\n!!! ERREUR BACKTEST : {e}")
         return {
             'error': str(e),
             'profit_pct': 0.0,
@@ -142,6 +173,6 @@ def run_simple_backtest(params: Dict[str, float],
             'won_trades': 0,
             'lost_trades': 0,
             'win_rate': 0.0,
-            'initial_value': initial_cash, # Correction mineure ici aussi (initial_value pas défini si crash avant)
+            'initial_value': initial_cash,
             'final_value': initial_cash
         }
