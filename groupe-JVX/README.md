@@ -90,8 +90,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ``` 
 
-
-Contenu principal des requirements :backtrader : Moteur de trading.deap : Algorithmes évolutionnaires.yfinance : Données de marché.streamlit : Dashboard.pandas, numpy, matplotlib.
+| Bibliothèque | Rôle du module |
+| :--- | :--- |
+| **backtrader** | Moteur de trading pour l'exécution des simulations et le backtesting |
+| **deap** | Framework de calcul évolutionnaire pour l'optimisation génétique |
+| **yfinance** | Interface de récupération des données de marché historiques |
+| **streamlit** | Outil de génération et de déploiement du dashboard interactif |
+| **pandas, numpy, matplotlib** | Bibliothèques essentielles pour la manipulation de données, les calculs et la visualisation |
 
 ### 3.🎮 Utilisation
 
@@ -131,7 +136,13 @@ python main.py --mode wfa
 python main.py --mode wfa --ticker SPY --generations 20 --population 100
 ```
 
-ArgumentDescriptionDéfaut--modetest, simple, wfa, allsimple--tickerSymbole (ex: BTC-USD, AAPL)BTC-USD--generationsNombre de générations10--populationTaille de la population50
+| Argument | Description | Défaut |
+| :--- | :--- | :--- |
+| **--mode** | Choix du mode d'exécution (test, simple, wfa, all) | simple |
+| **--ticker** | Symbole de l'actif (ex: BTC-USD, AAPL) | BTC-USD |
+| **--generations** | Nombre de cycles d'évolution (générations) | 10 |
+| **--population** | Taille de la population d'individus | 50 |
+
 
 ### 4. ⚙️ Configuration
 
@@ -163,7 +174,21 @@ WFA_STEP_MONTHS = 3      # Décalage de la fenêtre
 
 # 🧬 Détails de la Stratégie (Gènes)
 
-L'algorithme cherche à optimiser les 7 gènes suivants pour une stratégie de suivi de tendance (Trend Following) sur repli (Dip buying) :SMA_F (Fast Moving Average) : Période courte.SMA_S (Slow Moving Average) : Période longue.RSI_P : Période du RSI.RSI_UP : Seuil de surachat (Vente).RSI_LO : Seuil de survente (Achat).SL (Stop Loss) : % de perte max tolérée.TP (Take Profit) : % de gain cible.Logique d'achat : SMA_Fast > SMA_Slow (Tendance haussière) ET RSI < RSI_LO (Repli temporaire).
+L'algorithme génétique optimise un chromosome composé de 7 gènes pour piloter une stratégie de "Trend Following" sur repli (Dip buying) :
+
+| Paramètre | Rôle technique |
+| :--- | :--- |
+| **SMA_F** | Moyenne Mobile Courte pour la réactivité du prix |
+| **SMA_S** | Moyenne Mobile Longue pour définir la tendance de fond |
+| **RSI_P** | Période de calcul de l'indice de force relative |
+| **RSI_UP** | Seuil de surachat déclenchant la vente |
+| **RSI_LO** | Seuil de survente identifiant le point d'achat |
+| **SL** | Pourcentage de Stop Loss (perte maximale tolérée) |
+| **TP** | Pourcentage de Take Profit (objectif de gain cible) |
+
+**Logique d'Exécution**
+* **Achat** | Tendance haussière (**SMA_F > SMA_S**) ET Repli temporaire (**RSI < RSI_LO**)
+* **Vente** | Sortie par objectifs (**SL / TP**) OU Signal d'excès (**RSI > RSI_UP**) OU Inversion de tendance (**SMA_F < SMA_S**)
 
 # 📚 Références & Bibliographie : 
 
