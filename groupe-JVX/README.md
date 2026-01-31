@@ -1,95 +1,100 @@
-Système de Trading Algorithmique avec Algorithmes Génétiques
-Équipe JVX
+Système de Trading Algorithmique par Algorithmes Génétiques (GA)Projet ECE Paris - Ing4 Fin-IA - Groupe 02
 
-Jean-François
-Valentin
-Xavier
+Ce projet implémente un système d'optimisation de stratégies de trading utilisant des Algorithmes Génétiques (GA) et une validation robuste par Walk-Forward Analysis (WFA). L'objectif est de résoudre le problème de l'optimisation combinatoire des paramètres de trading tout en minimisant le risque de surapprentissage (overfitting).
+
+👥 Équipe JVX Jean-François Valentin Xavier
+
+📝 Contexte du ProjetDans le cadre du module "Finance & IA", ce projet répond à la problématique : "Stratégies de trading par algorithmes génétiques".L'optimisation de stratégies de trading nécessite d'explorer un espace immense de paramètres (indicateurs, seuils, stop-loss). Les méthodes traditionnelles (Brute Force) sont coûteuses et sujettes au curve-fitting. Notre solution utilise l'évolution darwinienne pour sélectionner les meilleures configurations et valide leur robustesse sur des données inconnues via une fenêtre glissante.Approche ScientifiqueEncodage : Stratégie encodée sous forme de chromosome (SMA, RSI, SL, TP).Moteur Évolutif : Utilisation de DEAP pour la sélection (NSGA-II), le croisement et la mutation.Fonction Fitness : Maximisation du profit et gestion du Drawdown.Validation : Walk-Forward Analysis (Train sur 12 mois -> Test sur 3 mois -> Glissement).🚀 Fonctionnalités ClésMoteur de Backtesting : Basé sur Backtrader, rapide et événementiel.Algorithme Génétique : Optimisation des paramètres (Périodes SMA, Seuils RSI, Stop Loss, Take Profit).Walk-Forward Analysis (WFA) : Simulation réaliste de ré-optimisation périodique pour tester la robustesse.Dashboard Interactif : Interface Streamlit pour visualiser les résultats et les courbes de performance.Architecture Modulaire : Séparation claire entre les données, le cœur GA, la stratégie et l'exécution.
 
 
-🚀 Installation
+🛠️ Architecture TechniqueLe projet est structuré autour de plusieurs modules interconnectés :Extrait de codegraph TD
+    A[Data Source (Yahoo/CSV)] --> B(DataManager)
+    B --> C{Mode d'Exécution}
+    C -- Simple --> D[GA Ecosystem (DEAP)]
+    C -- WFA --> E[Walk-Forward Analyzer]
+    D --> F[Backtrader Engine]
+    E --> F
+    F --> G[Résultats & Métriques]
+    G --> H[Dashboard Streamlit]
 
-Python 3.10 ou 3.11 (éviter 3.12+)
-Windows 10/11 (optimisé pour Windows)
+Structure des Fichiers
+main.py : Point d'entrée principal en ligne de commande (CLI).
+dashboard.py : Interface utilisateur 
+web.src/ :
+strategy_genes.py : Définition de la stratégie (SMA cross + RSI) et du génome.
+ga_core.py : Cœur de l'algorithme génétique (Population, Mutation, Évaluation).
+backtest_runner.py : Wrapper pour exécuter Backtrader et extraire les stats.
+walk_forward.py : Logique de la fenêtre glissante (Training/Testing sets).
+config.py : Paramètres globaux (Population, Dates, Commissions).
+data_manager.py : Gestion du téléchargement et formatage des données.
 
+💻 Installation PrérequisOS : 
+Windows 10/11 (Recommandé), Linux, macOS.
+Python : Version 3.10 ou 3.11 (Éviter 3.12+ pour compatibilité backtrader/deap).
+
+1. Cloner et préparer l'environnementBash# Création de l'environnement virtuel
+
+python -m venv .venv
+
+# Activation (Windows PowerShell)
 .\.venv\Scripts\Activate.ps1
 
-Installation des dépendances
-bashpip install -r requirements.txt
-Contenu de requirements.txt
-backtrader==1.9.78.123
-deap==1.4.1
-yfinance==0.2.28
-numpy==1.24.3
-pandas==2.0.3
-matplotlib==3.7.2
+# Activation (Linux/Mac)
+source .venv/bin/activate
 
-💻 Utilisation
+2. Installer les dépendances
 
-###dashboard 
+pip install -r requirements.txt
 
-cd groupe-JVX
-streamlit run dashboard.py
+Contenu principal des requirements :backtrader : Moteur de trading.deap : Algorithmes évolutionnaires.yfinance : Données de marché.streamlit : Dashboard.pandas, numpy, matplotlib.🎮 UtilisationLe projet peut être utilisé via le Terminal (CLI) pour les calculs ou via le Dashboard pour la visualisation.A. Interface Graphique (Dashboard)
+
+Pour analyser les résultats et lancer des optimisations visuelles :
 
 
-###terminal 
+streamlit run groupe-JVX/dashboard.py
 
 
-Mode Test (Téléchargement des données uniquement)
-python main.py --mode test
-Mode Simple (Optimisation GA unique)
+Accessible ensuite via votre navigateur à l'adresse : http://localhost:8501B. Ligne de Commande (CLI)
+
+Le script main.py offre plusieurs modes d'exécution 
+
+1. Mode Test (Vérification des données)Vérifie la connexion à Yahoo Finance et le téléchargement des CSV.
+
+python  main.py --mode test --ticker BTC-USD
+
+2. Mode Simple (Optimisation GA unique)Lance une optimisation génétique sur l'ensemble de la période d'entraînement définie.
+
 python main.py --mode simple
-Mode Walk-Forward Analysis
+
+3. Mode Walk-Forward (Recommandé)Lance l'analyse complète avec fenêtres glissantes (Train/Test) pour valider la robustesse.
+
 python main.py --mode wfa
-Mode Complet (Pipeline complet)
-python main.py --mode all
-Options avancées
+
+4. Options Avancées Vous pouvez surcharger les paramètres par défaut :
+
 python main.py --mode wfa --ticker SPY --generations 20 --population 100
-Paramètres CLI disponibles
 
---mode : Mode d'exécution (test, simple, wfa, all)
---ticker : Symbole de trading (défaut: BTC-USD)
---generations : Nombre de générations GA (défaut: 10)
---population : Taille de la population GA (défaut: 50)
+ArgumentDescriptionDéfaut--modetest, simple, wfa, allsimple--tickerSymbole (ex: BTC-USD, AAPL)BTC-USD--generationsNombre de générations10--populationTaille de la population50
 
-⚙️ Configuration
-Modifiez src/config.py pour ajuster :
-python# Données de marché
-TICKER = "BTC-USD"  # ou "SPY" pour actions
-INTERVAL = "1d"
+⚙️ ConfigurationLe fichier src/config.py centralise tous les hyperparamètres.
+
+Vous pouvez y ajuster :
+ --- Données ---
+TICKER = "BTC-USD"
 START_DATE = "2020-01-01"
-END_DATE = "2024-01-01"
+INTERVAL = "1d"
 
-# Backtesting
-INITIAL_CASH = 10_000.0
-COMMISSION_CRYPTO = 0.001
-COMMISSION_STOCK = 0.0001
+# --- Algorithme Génétique ---
+GA_POPULATION = 50       # Taille de la population
+GA_GENERATIONS = 10      # Nombre d'itérations
+GA_CXPB = 0.7            # Probabilité de croisement (Crossover)
+GA_MUTPB = 0.2           # Probabilité de mutation
 
-# Algorithme Génétique
-GA_POPULATION = 50
-GA_GENERATIONS = 10
-GA_CXPB = 0.7  # Probabilité de croisement
-GA_MUTPB = 0.2  # Probabilité de mutation
+# --- Walk-Forward Analysis ---
+WFA_TRAIN_MONTHS = 12    # Taille fenêtre d'entraînement
+WFA_TEST_MONTHS = 3      # Taille fenêtre de test (Out-of-sample)
+WFA_STEP_MONTHS = 3      # Décalage de la fenêtre
 
-# Walk-Forward Analysis
-WFA_TRAIN_MONTHS = 12  # Fenêtre d'entraînement
-WFA_TEST_MONTHS = 3    # Fenêtre de test
-WFA_STEP_MONTHS = 3    # Pas de glissement
-📈 Walk-Forward Analysis
-Principe
+🧬 Détails de la Stratégie (Gènes)L'algorithme cherche à optimiser les 7 gènes suivants pour une stratégie de suivi de tendance (Trend Following) sur repli (Dip buying) :SMA_F (Fast Moving Average) : Période courte.SMA_S (Slow Moving Average) : Période longue.RSI_P : Période du RSI.RSI_UP : Seuil de surachat (Vente).RSI_LO : Seuil de survente (Achat).SL (Stop Loss) : % de perte max tolérée.TP (Take Profit) : % de gain cible.Logique d'achat : SMA_Fast > SMA_Slow (Tendance haussière) ET RSI < RSI_LO (Repli temporaire).
 
-Fenêtre glissante : Entraînement sur 12 mois, test sur 3 mois
-Optimisation GA sur les données d'entraînement
-Validation sur les données out-of-sample (OOS)
-Glissement de 3 mois et répétition
-
-Métriques calculées
-
-Performance OOS moyenne/médiane
-Taux de victoire des fenêtres
-Comparaison vs Buy & Hold
-Drawdown maximum
-Ratio de Sharpe
-
-
-
-#
+📚 Références & BibliographieCe projet s'appuie sur les recherches académiques récentes :Robust Metaheuristic Optimization for Algorithmic Trading (MDPI, 2024).
