@@ -147,15 +147,19 @@ INTERVAL = "1d"
 
 
 # --- Algorithme Génétique ---
+```bash
 GA_POPULATION = 50       # Taille de la population
 GA_GENERATIONS = 10      # Nombre d'itérations
 GA_CXPB = 0.7            # Probabilité de croisement (Crossover)
 GA_MUTPB = 0.2           # Probabilité de mutation
+```
 
 # --- Walk-Forward Analysis ---
+```bash
 WFA_TRAIN_MONTHS = 12    # Taille fenêtre d'entraînement
 WFA_TEST_MONTHS = 3      # Taille fenêtre de test (Out-of-sample)
 WFA_STEP_MONTHS = 3      # Décalage de la fenêtre
+```
 
 # 🧬 Détails de la Stratégie (Gènes)
 
