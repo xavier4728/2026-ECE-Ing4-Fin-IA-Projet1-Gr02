@@ -4,12 +4,6 @@ Projet pédagogique d'exploration des approches d'intelligence artificielle symb
 
 ---
 
-## Slides de présentation
-
-Lien vers la présentation du projet :
-
-https://docs.google.com/presentation/d/1kAt_kWKx9UXwJGAI5uaq021muCQut7j3mekC2b-R9JA/edit?usp=sharing
-
 ## 📅 Modalités du projet
 
 ### Échéances importantes
