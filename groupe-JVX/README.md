@@ -6,6 +6,14 @@ Ce projet implémente un système d'optimisation de stratégies de trading utili
 
 ---
 
+## Slides de présentation
+
+Lien vers la présentation du projet :
+
+https://docs.google.com/presentation/d/1kAt_kWKx9UXwJGAI5uaq021muCQut7j3mekC2b-R9JA/edit?usp=sharing
+
+---
+
 ## 👥 Équipe JVX
 * **Jean-François**
 * **Valentin**
